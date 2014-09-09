@@ -1,0 +1,103 @@
+body {
+	margin: 0;
+	overflow: hidden;
+  	font-family: sans-serif;
+}
+
+.avl-map {
+	position: relative;
+	overflow: hidden;
+	background-color: rgba(203, 175, 66, 0.5);/*rgba(138, 154, 91, 0.5);*/
+}
+
+.layer {
+	position: absolute;
+}
+
+.tile {
+	position: absolute;
+	width: 256px;
+	height: 256px;
+}
+.tile path {
+  fill: none;
+  stroke: #000;
+  stroke-linejoin: round;
+  stroke-linecap: square;
+}
+
+.avl-control {
+	background-color: rgba(96, 78, 108, 0.5);
+  	padding: 5px;
+  	position: absolute;
+  	text-align: center;
+  	color: #614e6c;
+  	font-family: "sans serif";
+  	font-size: 12pt;
+  	z-index: 20;
+}
+
+.info-text {
+  	height: 20px;
+  	line-height: 20px;
+  	background-color: #cbaf42;
+  	padding: 3px 10px 1px 10px;
+}
+.avl-button {
+  	height: 20px;
+  	width: 20px;
+  	margin: 2px;
+  	padding: 2px;
+  	line-height: 20px;
+  	font-family: "sans serif";
+  	background-color: #cbaf42;
+}
+.avl-button:hover {
+  	border: solid 2px #614e6c;
+  	padding: 0px;
+}
+.avl-bold {
+  	font-weight: bold;
+  	font-size: 18pt;
+}
+.avl-list {
+  	height: 20px;
+  	margin: 2px;
+  	padding: 3px 10px 1px 10px;
+  	line-height: 20px;
+  	font-family: "sans serif";
+  	background-color: #cbaf42;
+}
+.avl-list:hover {
+  	border: solid 2px #614e6c;
+  	height: 19px;
+  	padding: 1px 8px 0px 8px;
+}
+.avl-inactive {
+  background-color: #ab8f22;
+}
+
+.avl-marker {
+  	height: 40px;
+  	width: 20px;
+  	background-color: #984ea3;/*#614e6c;*/
+  	position: absolute;
+  	z-index: 10;
+}
+
+.avl-top-left {
+  	top: 10px;
+  	left: 10px;
+}
+.avl-top-right {
+  	top: 10px;
+  	right: 10px;
+}
+.avl-bottom-left {
+  	bottom: 10px;
+  	left: 10px;
+}
+.avl-bottom-right {
+  	bottom: 10px;
+  	right: 10px;
+}
