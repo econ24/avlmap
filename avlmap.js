@@ -33,6 +33,8 @@
     	var path = this.tilePath,
     		draw = this.drawTile;
 
+    	draw.bind(this)
+
     	group.style('display', function(layer) {
         		return layer.visible() ? 'block' : 'none';
         	})
@@ -49,7 +51,7 @@
       	group.selectAll("path")
           	.data(json.features)
 			.enter().append("path")
-			.attr("d", tilePath);
+			//.attr("d", tilePath);
     }
 
     VectorLayer.prototype.visible = function(v) {
@@ -68,11 +70,13 @@
     VectorLayer.prototype.hideLayer = function() {
     	d3.selectAll('.'+this.id).style('display', 'none');
     	this._visible = false;
+    	return this;
     }
 
     VectorLayer.prototype.showLayer = function() {
     	d3.selectAll('.'+this.id).style('display', 'block');
     	this._visible = true;
+    	return this;
     }
 
     function RasterLayer(options) {
@@ -124,11 +128,9 @@
     function InfoControl(map, projection, options) {
 		Control.call(this, map, options);
 
-		var self = this;
-
 		map.on('mousemove', mousemoved);
 
-        var info = self.DOMel
+        var info = this.DOMel
             .append('div')
             .attr('class', 'info-text');
 
@@ -249,6 +251,46 @@
     LayerControl.prototype = Object.create(Control.prototype);
     LayerControl.prototype.constructor = LayerControl;
 
+    function MarkerControl(mapObj, projection, zoom, map, options) {
+		Control.call(this, map, options);
+
+		var width = mapObj.dimensions()[0],
+			height = mapObj.dimensions()[1],
+
+			markers = mapObj.MapMarker();
+
+		this.update = function() {
+            var buttons = this.DOMel
+                .selectAll('div')
+                .data(markers.data(), function(d) { return d.markerID; });
+
+            buttons.exit().remove();
+
+            buttons.enter().append('div')
+                .attr('class', 'avl-list avl-active')
+                .on('click', zoomTo);
+
+            buttons.text(function(d) { return d.name; });
+		}
+
+		markers.control(this.update.bind(this));
+
+        function zoomTo(d) {
+            d3.event.stopPropagation();
+            projection
+                .center(d.coords) // temporarily set center
+                .translate([width / 2, height / 2])
+                .translate(projection([0, 0])) // compute appropriate translate
+                .center([0, 0]); // reset
+
+            zoom.translate(projection.translate());
+
+            mapObj.zoomMap();
+        }
+    }
+    MarkerControl.prototype = Object.create(Control.prototype);
+    MarkerControl.prototype.constructor = MarkerControl;
+
     function ControlsManager(mapObj, map, projection, zoom) {
     	var self = this,
     		controls = {},
@@ -278,6 +320,12 @@
 
     			controls.layer = new LayerControl(mapObj, map, options);
     		}
+    		else if (options.type == 'marker' && !controls.marker) {
+    			options.id = 'avl-map-marker-control';
+
+    			controls.marker = new MarkerControl(mapObj, projection, zoom, map, options);
+    			controls.marker.update();
+    		}
     	}
 
         function getPosition(pos) {
@@ -297,9 +345,9 @@
             return null;
         }
 
-      	this.update = function() {
-      		if (controls.layer) {
-      			controls.layer.update();
+      	this.update = function(control) {
+      		if (control in controls) {
+      			controls[control].update();
       		}
       	}
     }
@@ -309,10 +357,12 @@
     function MapMarker(map, projection) {
     	var data = [],
     		width = 20,
-    		height = 40;
+    		height = 40,
+    		markers,
+    		control;
 
     	function marker() {
-    		var markers = map.selectAll('.avl-map-marker')
+    		markers = map.selectAll('.avl-map-marker')
     			.data(data, function(d) { return d.coords.join('-'); });
 
     		markers.exit().remove();
@@ -320,7 +370,12 @@
     		markers.enter().append('div')
     			.attr('class', 'avl-map-marker')
     			.attr('id', function(d) { return (d.id || null); })
-    			.each(function(d) { d.markerID = 'avl-map-marker-'+UNIQUE_MARKER_IDs++; });
+    			.each(function(d) {
+    				d.markerID = 'avl-map-marker-'+UNIQUE_MARKER_IDs++;
+    				d.name = d.name || 'avl-map-marker';
+    				width = this.offsetWidth;
+    				height = this.offsetHeight;
+    			});
 
     		markers
     			.each(function(d) {
@@ -333,11 +388,22 @@
     			})
     		return marker;
     	}
+    	marker.each = function(func) {
+    		markers.each(func);
+    	}
+    	marker.control = function(func) {
+    		if (!arguments.length) {
+    			return control;
+    		}
+    		control = func;
+    		return marker;
+    	}
     	marker.data = function(d) {
     		if (!arguments.length) {
     			return data;
     		}
     		data = d;
+    		if (control) { control(); }
     		return marker;
     	}
     	return marker;
@@ -464,8 +530,7 @@
 
 			    	svg.selectAll('g')
 			    		.data(MAP_LAYERS, function(layer) { return layer.id; })
-			    		.enter()
-			    		.append('g')
+			    		.enter().append('g')
 			        	.attr('class', function(layer) {
 			        		return layer.id;
 			        	})
@@ -503,7 +568,7 @@
 			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
 
 			if (controlsManager) {
-				controlsManager.update();
+				controlsManager.update('layer');
 			}
 
 			self.zoomMap();
@@ -522,7 +587,7 @@
 			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
 
 			if (controlsManager) {
-				controlsManager.update();
+				controlsManager.update('layer');
 			}
 
 			d3.selectAll('.'+layer.id()).remove();
@@ -542,7 +607,11 @@
 		}
 
 		self.MapMarker = function() {
-			return MAP_MARKERS = MapMarker(map, projection);
+			if (!MAP_MARKERS) {
+				MAP_MARKERS = MapMarker(map, projection);
+			}
+
+			return MAP_MARKERS;
 		}
 
 		self.dimensions = function(dims) {
