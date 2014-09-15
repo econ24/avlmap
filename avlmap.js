@@ -1,50 +1,27 @@
-(function() {
+ (function() {
 	var avlmap = {version: '2.0-beta'}
 
 	function AVLobject(options) {
-		this._id = arguments.length ? (options.id || null) : null;
-	}
-
-	AVLobject.prototype.id = function(i) {
-		if (!arguments.length) {
-			return this._id;
-		}
-		this._id = i;
-		return this;
+		this.id = arguments.length ? (options.id || null) : null;
 	}
 
 	function MapLayer(options) {
 		AVLobject.call(this, options);
 
-		this._URL = options.url;
-		this._name = options.name || null;
+		this.URL = options.url;
+		this.name = options.name || null;
 	}
     MapLayer.prototype = Object.create(AVLobject.prototype);
     MapLayer.prototype.constructor = MapLayer;
 
-	MapLayer.prototype.url = function(u) {
-		if (!arguments.length) {
-			return this._URL;
-		}
-		this._URL = u;
-		return this;
-	}
-	MapLayer.prototype.name = function(n) {
-		if (!arguments.length) {
-			return this._name;
-		}
-		this._name = n;
-		return this;
-	}
-
     MapLayer.prototype.makeURL = function(tile) {
-        return this._URL.replace(/{z}\/{x}\/{y}/, tile[2] + '/' + tile[0] + '/' + tile[1]);
+        return this.URL.replace(/{z}\/{x}\/{y}/, tile[2] + '/' + tile[0] + '/' + tile[1]);
     }
 
 	function VectorLayer(options) {
 		MapLayer.call(this, options);
 
-		this._zIndex = options.zIndex || 0;
+		this.zIndex = options.zIndex || 0;
 		this._visible = true;
 	}
     VectorLayer.prototype = Object.create(MapLayer.prototype);
@@ -89,19 +66,19 @@
     }
 
     VectorLayer.prototype.hideLayer = function() {
-    	d3.selectAll('.'+this.id()).style('display', 'none');
+    	d3.selectAll('.'+this.id).style('display', 'none');
     	this._visible = false;
     }
 
     VectorLayer.prototype.showLayer = function() {
-    	d3.selectAll('.'+this.id()).style('display', 'block');
+    	d3.selectAll('.'+this.id).style('display', 'block');
     	this._visible = true;
     }
 
     function RasterLayer(options) {
 		MapLayer.call(this, options);
 
-		this._zIndex = options.zIndex || -5;
+		this.zIndex = options.zIndex || -5;
 	}
     RasterLayer.prototype = Object.create(MapLayer.prototype);
     RasterLayer.prototype.constructor = RasterLayer;
@@ -125,7 +102,7 @@
 			position = options.position;
 
 		self.DOMel = map.append('div')
-			.attr('id', self.id())
+			.attr('id', self.id)
 			.attr('class', 'avl-control')
 			.classed(position, true)
             .on('dblclick', function() {
@@ -244,7 +221,7 @@
         function updateButtons() {
             var buttons = self.DOMel
                 .selectAll('div')
-                .data(layers, function(d) { return d.id(); });
+                .data(layers, function(d) { return d.id; });
 				
             buttons.exit().remove();
 
@@ -253,7 +230,7 @@
                 .on('click', toggle)
 
             buttons.classed('avl-inactive', function(d) { return !d.visible(); })
-                .text(function(d) { return d.name(); });
+                .text(function(d) { return d.name; });
         }
 
         function toggle(layer) {
@@ -327,53 +304,43 @@
       	}
     }
 
-    function MapMarker(map, options) {
-    	AVLobject.call(this, options);
+    var UNIQUE_MARKER_IDs = 0;
 
-        this.marker = map.append('div')
-            .attr('class', 'avl-marker');
+    function MapMarker(map, projection) {
+    	var data = [],
+    		width = 20,
+    		height = 40;
 
-    	this._name = options.name;
-    	this._coords = options.coords;
-    	this._width = parseInt(this.marker.style('width'));
-    	this._height = parseInt(this.marker.style('height'));
-    }
-    MapMarker.prototype = Object.create(AVLobject.prototype);
-    MapMarker.prototype.constructor = MapMarker;
+    	function marker() {
+    		var markers = map.selectAll('.avl-map-marker')
+    			.data(data, function(d) { return d.coords.join('-'); });
 
-    MapMarker.prototype.name = function(n) {
-    	if (!arguments.length) {
-    		return this._name;
+    		markers.exit().remove();
+
+    		markers.enter().append('div')
+    			.attr('class', 'avl-map-marker')
+    			.attr('id', function(d) { return (d.id || null); })
+    			.each(function(d) { d.markerID = 'avl-map-marker-'+UNIQUE_MARKER_IDs++; });
+
+    		markers
+    			.each(function(d) {
+    				var loc = projection(d.coords);
+
+    				d3.select(this)
+    					.style('background-color', d.color || null)
+    					.style('left', (loc[0]-width/2)+'px')
+    					.style('top', (loc[1]-height)+'px')
+    			})
+    		return marker;
     	}
-    	this._name = n;
-    	return this;
-    }
-
-    MapMarker.prototype.coords = function(c) {
-    	if (!arguments.length) {
-    		return this._coords;
+    	marker.data = function(d) {
+    		if (!arguments.length) {
+    			return data;
+    		}
+    		data = d;
+    		return marker;
     	}
-    	this._coords = c;
-    	return this;
-    }
-
-    MapMarker.prototype.update = function(projection) {
-    	var loc = projection(this._coords),
-	        left = loc[0]-this._width/2,
-	        top = loc[1]-this._height;
-
-        this.marker
-        	.style('left', left+'px')
-            .style('top', top+'px');
-    }
-
-    MapMarker.prototype.remove = function() {
-    	this.marker.remove();
-    }
-
-    MapMarker.prototype.removeFrom = function(mapObj) {
-    	mapObj.removeMarker(this);
-    	return mapObj;
+    	return marker;
     }
 
     function XHRcache() {
@@ -409,11 +376,11 @@
 		}
 		AVLobject.call(this, options);
 
-		if (!document.getElementById(self._id.slice(1))) {
+		if (!document.getElementById(self.id.slice(1))) {
 			d3.select('body').append('div')
-				.attr('id', self._id.slice(1))
-				.attr('width', window.innerWidth+'px')
-				.attr('height', window.innerHeight+'px')
+				.attr('id', self.id.slice(1))
+				.attr('width', function() { return (window.innerWidth-this.offsetLeft)+'px'; })
+				.attr('height', function() { return (window.innerHeight-this.offsetTop)+'px'; });
 		}
 
         var zoomAdjust = 8; // needed to adjust start zoom
@@ -424,15 +391,15 @@
             startLoc = options.startLoc || [-73.824, 42.686], // defaults to Albany, NY
             zoomExtent = [minZoom, maxZoom];
 
-		var width = parseInt(d3.select(self._id).attr('width'))
-		    height = parseInt(d3.select(self._id).attr('height'))
+		var width = parseInt(d3.select(self.id).attr('width'))
+		    height = parseInt(d3.select(self.id).attr('height'))
 		    prefix = prefixMatch();
 
 		var MAP_LAYERS = [],
 			VECTOR_LAYERS = [],
-			LAYER_IDs = 0,
-			MAP_MARKERS = {},
-			MARKER_IDs = 0;
+			LAYER_IDs = 0;
+
+		var MAP_MARKERS = null;
 
 		var xhrCache = new XHRcache();
 
@@ -451,11 +418,14 @@
 		    .translate(projection(startLoc).map(function(x) { return -x; }))
 		    .on("zoom", function() { self.zoomMap(); });
 
-		var map = d3.select(self._id)
+		var map = d3.select(self.id)
 		    .attr("class", "avl-map")
 		    .style("width", width + "px")
 		    .style("height", height + "px")
 		    .call(zoom);
+		this.map = function() {
+			return map;
+		}
 
 		var vectorLayer = map.append("div")
 		    .attr("class", "layer");
@@ -493,24 +463,24 @@
 			    	this.tileID = tileID;
 
 			    	svg.selectAll('g')
-			    		.data(MAP_LAYERS, function(layer) { return layer.id(); })
+			    		.data(MAP_LAYERS, function(layer) { return layer.id; })
 			    		.enter()
 			    		.append('g')
 			        	.attr('class', function(layer) {
-			        		return layer.id();
+			        		return layer.id;
 			        	})
 			        	.each(function(layer) {
 			        		var xhr = layer.initTile(d3.select(this), tile, translate, scale);
 					        if (xhr) {
-					        	xhrCache.addXHR(xhr, tileID, layer.id());
+					        	xhrCache.addXHR(xhr, tileID, layer.id);
 					        }
 			        	}); // end svg.selectAll('g').each(...)
 			    }) // end vectorTiles.each(...)
 
 			vectorTiles.exit().each(function() { xhrCache.abortXHR(this.tileID); }).remove();
 
-			for (var key in MAP_MARKERS) {
-				MAP_MARKERS[key].update(projection);
+			if (MAP_MARKERS) {
+				MAP_MARKERS();
 			}
 		}
 
@@ -518,11 +488,11 @@
 			if (!arguments.length) {
 				return VECTOR_LAYERS;
 			}
-			if (!layer.id()) {
-				layer.id('layer-'+LAYER_IDs++);
+			if (!layer.id) {
+				layer.id = 'layer-'+LAYER_IDs++;
 			}
-			if (!layer.name()) {
-				layer.name('Layer '+LAYER_IDs);
+			if (!layer.name) {
+				layer.name = 'Layer '+LAYER_IDs;
 			}
 
 			MAP_LAYERS.push(layer);
@@ -571,21 +541,8 @@
 			return self;
 		}
 
-		self.addMarker = function(options) {
-			if (!options.id) {
-				options.id = 'marker-' + MARKER_IDs++;
-			}
-			var marker = new MapMarker(map, options);
-			marker.update(projection);
-
-			MAP_MARKERS[marker.id()] = marker;
-
-			return marker;
-		}
-		self.removeMarker = function(marker) {
-			delete MAP_MARKERS[marker.id()];
-			marker.remove();
-			return self;
+		self.MapMarker = function() {
+			return MAP_MARKERS = MapMarker(map, projection);
 		}
 
 		self.dimensions = function(dims) {

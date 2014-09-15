@@ -77,12 +77,12 @@ body {
   background-color: #ab8f22;
 }
 
-.avl-marker {
-  	height: 40px;
-  	width: 20px;
-  	background-color: #984ea3;/*#614e6c;*/
-  	position: absolute;
-  	z-index: 10;
+.avl-map-marker {
+    height: 40px;
+    width: 20px;
+    background-color: #984ea3;/*#614e6c;*/
+    position: absolute;
+    z-index: 10;
 }
 
 .avl-top-left {

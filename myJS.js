@@ -17,7 +17,11 @@ function test() {
 	highroads.drawTile = drawHighroads;
 	map.addLayer(highroads);
 
-	map.addMarker({coords: [-73.824, 42.686]})
+	var markers = map.MapMarker()
+		.data([
+			{ coords: [-74.47828, 42.68254], color: '#080' },
+			{ coords: [-73.82395, 42.68614] }
+		])();
 
 	var strokeWidth = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
