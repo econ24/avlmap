@@ -2,25 +2,27 @@ window.onload = test;
 
 function test() {
 	var map = avlmap.Map()
-		.addLayer(avlmap.RasterLayer({url: "http://api.tiles.mapbox.com/v3/am3081.map-lkbhqenw/{z}/{x}/{y}.png"}))
+		.addLayer(avlmap.RasterLayer({url: "http://api.tiles.mapbox.com/v3/am3081.map-lkbhqenw/{z}/{x}/{y}.png",
+									  name: 'Raster Layer' }))
 		.addControl({type:'info', position: 'bottom-right'})
 		.addControl({type:'zoom'})
 		.addControl({type:'layer'})
 
 	var buildings = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-buildings/{z}/{x}/{y}.json',
-									 name: 'Buildings'});
+									    name: 'Buildings' });
 	buildings.drawTile = drawBuildings;
 	map.addLayer(buildings);
 
 	var highroads = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-highroad/{z}/{x}/{y}.json',
-									 name: 'Roads'});
+									    name: 'Roads' });
 	highroads.drawTile = drawHighroads;
 	map.addLayer(highroads);
 
 	var markers = map.MapMarker()
 		.data([
 			{ coords: [-74.47828, 42.68254], color: '#080', name: 'Cobbleskill' },
-			{ coords: [-73.82395, 42.68614], name: 'UAlbany' }
+			{ coords: [-73.82395, 42.68614], name: 'UAlbany' },
+			{ coords: [-73.68248, 42.73523], color: '#000', name: 'Troy' }
 		])();
 
 	map.addControl({type:'marker'});

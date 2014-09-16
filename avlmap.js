@@ -85,7 +85,7 @@
     RasterLayer.prototype = Object.create(MapLayer.prototype);
     RasterLayer.prototype.constructor = RasterLayer;
 
-    RasterLayer.prototype.initTile = function(group, tile, translate, scale) {
+    RasterLayer.prototype.initTile = function(group, tile) {
     	group.style('display', function(layer) {
                 return layer.visible() ? 'block' : 'none';
             })
@@ -414,7 +414,6 @@
 			while (cache[tileID].length) {
                 cache[tileID].pop().abort();
             }
-            //delete cache[tileID];
     	}
     }
 
@@ -476,7 +475,7 @@
 		    .style("height", height + "px")
 		    .call(zoom);
 
-		var vectorLayer = map.append("div")
+		var vectorLayer = map.append("g")
 		    .attr("class", "layer");
 
 		self.zoomMap = function() {
@@ -545,7 +544,7 @@
 
 			MAP_LAYERS.push(layer);
 
-			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
+			MAP_LAYERS.sort(function(a, b) { return a.zIndex - b.zIndex; });
 
 			if (controlsManager) {
 				controlsManager.update('layer');
@@ -561,15 +560,13 @@
 				MAP_LAYERS.splice(index, 1);
 			}
 
-			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
+			MAP_LAYERS.sort(function(a, b) { return a.zIndex - b.zIndex; });
 
 			if (controlsManager) {
 				controlsManager.update('layer');
 			}
 
-			d3.selectAll('.'+layer.id()).remove();
-
-			//self.zoomMap();
+			d3.selectAll('.'+layer.id).remove();
 
 			return self;
 		}
