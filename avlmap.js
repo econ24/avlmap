@@ -10,6 +10,7 @@
 
 		this.URL = options.url;
 		this.name = options.name || null;
+        this._visible = true;
 	}
     MapLayer.prototype = Object.create(AVLobject.prototype);
     MapLayer.prototype.constructor = MapLayer;
@@ -18,11 +19,35 @@
         return this.URL.replace(/{z}\/{x}\/{y}/, tile[2] + '/' + tile[0] + '/' + tile[1]);
     }
 
+    MapLayer.prototype.visible = function(v) {
+        if (!arguments.length) {
+            return this._visible;
+        }
+        if (v) {
+            this.showLayer();
+        }
+        else {
+            this.hideLayer()
+        }
+        return this;
+    }
+
+    MapLayer.prototype.hideLayer = function() {
+        d3.selectAll('.'+this.id).style('display', 'none');
+        this._visible = false;
+        return this;
+    }
+
+    MapLayer.prototype.showLayer = function() {
+        d3.selectAll('.'+this.id).style('display', 'block');
+        this._visible = true;
+        return this;
+    }
+
 	function VectorLayer(options) {
 		MapLayer.call(this, options);
 
 		this.zIndex = options.zIndex || 0;
-		this._visible = true;
 	}
     VectorLayer.prototype = Object.create(MapLayer.prototype);
     VectorLayer.prototype.constructor = VectorLayer;
@@ -30,53 +55,26 @@
     VectorLayer.prototype.tilePath = d3.geo.path().projection(d3.geo.mercator());
 
     VectorLayer.prototype.initTile = function(group, tile, translate, scale) {
-    	var path = this.tilePath,
-    		draw = this.drawTile;
-
-    	draw.bind(this)
 
     	group.style('display', function(layer) {
         		return layer.visible() ? 'block' : 'none';
         	})
 
-        return d3.json(this.makeURL(tile), function(error, json) {
-			    path.projection()
-			        .translate(translate)
-			        .scale(scale);
-				draw(group, json, path);
-	        })
+        return d3.json(this.makeURL(tile), callBack.bind(this));
+
+        function callBack(error, json) {
+            this.tilePath.projection()
+                .translate(translate)
+                .scale(scale);
+            this.drawTile.bind(this)(group, json, this.tilePath);
+        }
     }
 
     VectorLayer.prototype.drawTile = function(group, json, tilePath) {
       	group.selectAll("path")
           	.data(json.features)
 			.enter().append("path")
-			//.attr("d", tilePath);
-    }
-
-    VectorLayer.prototype.visible = function(v) {
-    	if (!arguments.length) {
-    		return this._visible;
-    	}
-    	if (v) {
-    		this.showLayer();
-    	}
-    	else {
-    		this.hideLayer()
-    	}
-    	return this;
-    }
-
-    VectorLayer.prototype.hideLayer = function() {
-    	d3.selectAll('.'+this.id).style('display', 'none');
-    	this._visible = false;
-    	return this;
-    }
-
-    VectorLayer.prototype.showLayer = function() {
-    	d3.selectAll('.'+this.id).style('display', 'block');
-    	this._visible = true;
-    	return this;
+			.attr("d", tilePath);
     }
 
     function RasterLayer(options) {
@@ -88,10 +86,11 @@
     RasterLayer.prototype.constructor = RasterLayer;
 
     RasterLayer.prototype.initTile = function(group, tile, translate, scale) {
-    	group.selectAll('image')
-    		.data([tile])
-    		.enter()
-    		.append('svg:image')
+    	group.style('display', function(layer) {
+                return layer.visible() ? 'block' : 'none';
+            })
+            .selectAll('image').data([tile])
+    		.enter().append('svg:image')
     		.attr('width', '256px')
     		.attr('height', '256px')
     		.attr('xlink:href', this.makeURL(tile))
@@ -210,28 +209,19 @@
     function LayerControl(mapObj, map, options) {
 		Control.call(this, map, options);
 
-		var self = this,
-			layers;
-
-        self.update = function(layer) {
-        	layers = mapObj.layers() || [];
-        	updateButtons();
-        }
-
-        self.update();
-
-        function updateButtons() {
-            var buttons = self.DOMel
+        this.update = function() {
+            var buttons = this.DOMel
                 .selectAll('div')
-                .data(layers, function(d) { return d.id; });
+                .data(mapObj.layers(), function(d) { return d.id; });
 				
             buttons.exit().remove();
 
             buttons.enter().append('div')
                 .attr('class', 'avl-list')
-                .on('click', toggle)
+                .on('click', toggle);
 
-            buttons.classed('avl-inactive', function(d) { return !d.visible(); })
+            buttons
+            	.classed('avl-inactive', function(d) { return !d.visible(); })
                 .text(function(d) { return d.name; });
         }
 
@@ -319,6 +309,7 @@
     			options.id = 'avl-layer-control'
 
     			controls.layer = new LayerControl(mapObj, map, options);
+    			controls.layer.update();
     		}
     		else if (options.type == 'marker' && !controls.marker) {
     			options.id = 'avl-map-marker-control';
@@ -412,22 +403,18 @@
     function XHRcache() {
     	var cache = {};
 
-    	this.addXHR = function(xhr, tileID, layerID) {
+    	this.addXHR = function(xhr, tileID) {
     		if (!(tileID in cache)) {
-    			cache[tileID] = {};
+    			cache[tileID] = [];
     		}
-    		cache[tileID][layerID] = xhr;
-    	}
-
-    	this.removeXHR = function(tileID, layerID) {
-    		delete cache[tileID];
+    		cache[tileID].push(xhr);
     	}
 
     	this.abortXHR = function(tileID) {
-			for (var layer in cache[tileID]) {
-	    		cache[tileID][layer].abort();
-			}
-    		this.removeXHR(tileID);
+			while (cache[tileID].length) {
+                cache[tileID].pop().abort();
+            }
+            //delete cache[tileID];
     	}
     }
 
@@ -462,7 +449,6 @@
 		    prefix = prefixMatch();
 
 		var MAP_LAYERS = [],
-			VECTOR_LAYERS = [],
 			LAYER_IDs = 0;
 
 		var MAP_MARKERS = null;
@@ -489,9 +475,6 @@
 		    .style("width", width + "px")
 		    .style("height", height + "px")
 		    .call(zoom);
-		this.map = function() {
-			return map;
-		}
 
 		var vectorLayer = map.append("div")
 		    .attr("class", "layer");
@@ -529,17 +512,17 @@
 			    	this.tileID = tileID;
 
 			    	svg.selectAll('g')
-			    		.data(MAP_LAYERS, function(layer) { return layer.id; })
+			    		.data(MAP_LAYERS)
 			    		.enter().append('g')
-			        	.attr('class', function(layer) {
-			        		return layer.id;
-			        	})
+			        	.attr('class', function(layer) { return layer.id; })
 			        	.each(function(layer) {
 			        		var xhr = layer.initTile(d3.select(this), tile, translate, scale);
 					        if (xhr) {
-					        	xhrCache.addXHR(xhr, tileID, layer.id);
+					        	xhrCache.addXHR(xhr, tileID);
 					        }
+
 			        	}); // end svg.selectAll('g').each(...)
+
 			    }) // end vectorTiles.each(...)
 
 			vectorTiles.exit().each(function() { xhrCache.abortXHR(this.tileID); }).remove();
@@ -549,9 +532,9 @@
 			}
 		}
 
-		self.layers = function(layer, vector) {
+		self.layers = function(layer) {
 			if (!arguments.length) {
-				return VECTOR_LAYERS;
+				return MAP_LAYERS;
 			}
 			if (!layer.id) {
 				layer.id = 'layer-'+LAYER_IDs++;
@@ -561,9 +544,6 @@
 			}
 
 			MAP_LAYERS.push(layer);
-			if (vector) {
-				VECTOR_LAYERS.push(layer);
-			}
 
 			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
 
@@ -579,9 +559,6 @@
 			var index;
 			if ((index = MAP_LAYERS.indexOf(layer)) >= 0) {
 				MAP_LAYERS.splice(index, 1);
-			}
-			if ((index = VECTOR_LAYERS.indexOf(layer)) >= 0) {
-				VECTOR_LAYERS.splice(index, 1);
 			}
 
 			MAP_LAYERS.sort(function(a, b) { return a._zIndex - b._zIndex; });
@@ -623,10 +600,10 @@
 
 	AVLMap.prototype.addLayer = function(layer) {
 		if (layer instanceof VectorLayer) {
-			this.layers(layer, true);
+			this.layers(layer);
 		}
 		else if (layer instanceof RasterLayer) {
-			this.layers(layer, false);
+			this.layers(layer);
 		}
 		return this;
 	}
