@@ -5,21 +5,21 @@ body {
 }
 
 .avl-map {
-	position: relative;
+  position: absolute;
 	overflow: hidden;
 	background-color: rgba(203, 175, 66, 0.5);/*rgba(138, 154, 91, 0.5);*/
 }
 
-.layer {
+.avl-layer {
 	position: absolute;
 }
 
-.tile {
+.avl-tile {
 	position: absolute;
 	width: 256px;
 	height: 256px;
 }
-.tile path {
+.avl-tile path {
   fill: none;
   stroke: #000;
   stroke-linejoin: round;
@@ -50,7 +50,7 @@ body {
   	padding: 2px;
   	line-height: 20px;
   	font-family: "sans serif";
-  	background-color: #cbaf42;
+    background-color: #cbaf42;
 }
 .avl-button:hover {
   	border: solid 2px #614e6c;

@@ -1,5 +1,7 @@
  (function() {
-	var avlmap = {version: '2.0-beta'}
+	var avlmap = {version: '2.0-beta'};
+
+    var UNIQUE_MARKER_IDs = 0;
 
 	function AVLobject(options) {
 		this.id = arguments.length ? (options.id || null) : null;
@@ -85,17 +87,16 @@
     RasterLayer.prototype = Object.create(MapLayer.prototype);
     RasterLayer.prototype.constructor = RasterLayer;
 
-    RasterLayer.prototype.initTile = function(group, tile) {
-    	group.style('display', function(layer) {
+    RasterLayer.prototype.getImage = function(svg, tile) {
+    	svg.selectAll('image').data([this])
+            .enter().append('svg:image')
+            .attr('class', function(layer) { return layer.id; })
+            .style('display', function(layer) {
                 return layer.visible() ? 'block' : 'none';
             })
-            .selectAll('image').data([tile])
-    		.enter().append('svg:image')
     		.attr('width', '256px')
     		.attr('height', '256px')
-    		.attr('xlink:href', this.makeURL(tile))
-
-        return null;
+    		.attr('xlink:href', function(layer) { return layer.makeURL(tile); });
     }
 
     function Control(map, options) {
@@ -131,16 +132,11 @@
 
         var info = this.DOMel
             .append('div')
-            .attr('class', 'info-text');
+            .attr('class', 'info-text')
+            .text(avlmap.formatLocation(options.start, projection.scale()));
 
 		function mousemoved() {
-		  	info.text(formatLocation(projection.invert(d3.mouse(this)), projection.scale()));
-		}
-
-		function formatLocation(p, k) {
-		  	var format = d3.format("." + Math.floor(Math.log(k) / 2 - 2) + "f");
-		  	return (p[1] < 0 ? format(-p[1]) + "°S" : format(p[1]) + "°N") + " "
-		         + (p[0] < 0 ? format(-p[0]) + "°W" : format(p[0]) + "°E");
+		  	info.text(avlmap.formatLocation(projection.invert(d3.mouse(this)), projection.scale()));
 		}
     }
     InfoControl.prototype = Object.create(Control.prototype);
@@ -249,10 +245,10 @@
 
 			markers = mapObj.MapMarker();
 
-		this.update = function() {
+		this.update = function(data) {
             var buttons = this.DOMel
                 .selectAll('div')
-                .data(markers.data(), function(d) { return d.markerID; });
+                .data(data, function(d) { return d.markerID; });
 
             buttons.exit().remove();
 
@@ -262,8 +258,7 @@
 
             buttons.text(function(d) { return d.name; });
 		}
-
-		markers.control(this.update.bind(this));
+        markers.updater(this.update.bind(this));
 
         function zoomTo(d) {
             d3.event.stopPropagation();
@@ -289,7 +284,7 @@
 							 'bottom-left': false, 'top-left': false};;
 
     	this.addControl = function(options) {
-			options.position = 'avl-'+getPosition(options.position);
+			options.position = getPosition(options.position);
 
 			if (!options.position) {
 				return;
@@ -315,7 +310,6 @@
     			options.id = 'avl-map-marker-control';
 
     			controls.marker = new MarkerControl(mapObj, projection, zoom, map, options);
-    			controls.marker.update();
     		}
     	}
 
@@ -330,7 +324,7 @@
                     pos = allPositions[index];
                 } else {
                     positionsUsed[pos] = true;
-                    return pos;
+                    return 'avl-'+pos;
                 }
             }
             return null;
@@ -343,14 +337,12 @@
       	}
     }
 
-    var UNIQUE_MARKER_IDs = 0;
-
     function MapMarker(map, projection) {
     	var data = [],
     		width = 20,
     		height = 40,
-    		markers,
-    		control;
+    		markers = null,
+    		updater = null;
 
     	function marker() {
     		markers = map.selectAll('.avl-map-marker')
@@ -368,58 +360,61 @@
     				height = this.offsetHeight;
     			});
 
-    		markers
-    			.each(function(d) {
-    				var loc = projection(d.coords);
+    		markers.each(function(d) {
+				var loc = projection(d.coords);
 
-    				d3.select(this)
-    					.style('background-color', d.color || null)
-    					.style('left', (loc[0]-width/2)+'px')
-    					.style('top', (loc[1]-height)+'px')
-    			})
-    		return marker;
+				d3.select(this)
+					.style('background-color', d.color || null)
+					.style('left', (loc[0]-width/2)+'px')
+					.style('top', (loc[1]-height)+'px')
+			})
     	}
-    	marker.each = function(func) {
-    		markers.each(func);
-    	}
-    	marker.control = function(func) {
-    		if (!arguments.length) {
-    			return control;
-    		}
-    		control = func;
-    		return marker;
-    	}
+        marker.each = function(func) {
+            markers.each(func);
+        }
+        marker.updater = function(u) {
+            if (!arguments.length) {
+                return updater;
+            }
+            updater = u;
+            updater(data);
+            return marker;
+        }
     	marker.data = function(d) {
     		if (!arguments.length) {
     			return data;
     		}
     		data = d;
-    		if (control) { control(); }
+            if (updater != null) {
+                updater(data);
+            }
     		return marker;
     	}
     	return marker;
     }
 
     function XHRcache() {
-    	var cache = {};
+    	var cache = d3.map();
 
     	this.addXHR = function(xhr, tileID) {
-    		if (!(tileID in cache)) {
-    			cache[tileID] = [];
+    		if (!cache.has(tileID)) {
+    			cache.set(tileID, []);
     		}
-    		cache[tileID].push(xhr);
+    		cache.get(tileID).push(xhr);
     	}
 
     	this.abortXHR = function(tileID) {
-			while (cache[tileID].length) {
-                cache[tileID].pop().abort();
+            if (!cache.has(tileID)) return;
+
+            var XHRlist = cache.get(tileID);
+
+			while (XHRlist.length) {
+                XHRlist.pop().abort();
             }
     	}
     }
 
 	function AVLMap(options) {
-		var self = this;
-
 		if (!options) {
 			options = {id: '#avl-map'};
 		}
@@ -428,9 +423,9 @@
 		}
 		AVLobject.call(this, options);
 
-		if (!document.getElementById(self.id.slice(1))) {
+		if (!document.getElementById(this.id.slice(1))) {
 			d3.select('body').append('div')
-				.attr('id', self.id.slice(1))
+				.attr('id', this.id.slice(1))
 				.attr('width', function() { return (window.innerWidth-this.offsetLeft)+'px'; })
 				.attr('height', function() { return (window.innerHeight-this.offsetTop)+'px'; });
 		}
@@ -443,11 +438,13 @@
             startLoc = options.startLoc || [-73.824, 42.686], // defaults to Albany, NY
             zoomExtent = [minZoom, maxZoom];
 
-		var width = parseInt(d3.select(self.id).attr('width'))
-		    height = parseInt(d3.select(self.id).attr('height'))
+		var width = window.innerWidth,
+		    height = window.innerHeight,
 		    prefix = prefixMatch();
 
 		var MAP_LAYERS = [],
+            VECTOR_LAYERS = [],
+            RASTER_LAYER = null,
 			LAYER_IDs = 0;
 
 		var MAP_MARKERS = null;
@@ -459,31 +456,27 @@
 		var tileGen = d3.geo.tile()
 		    .size([width, height]);
 
+        var currentZoom;
+
 		var projection = d3.geo.mercator()
 		    .scale(startZoom / 2 / Math.PI)
 		    .translate([-width / 2, -height / 2]);
 
-		var zoom = d3.behavior.zoom()
-		    .scale(projection.scale() * 2 * Math.PI)
-		    .scaleExtent(zoomExtent)
-		    .translate(projection(startLoc).map(function(x) { return -x; }))
-		    .on("zoom", function() { self.zoomMap(); });
+        var dispatch = d3.dispatch('mapzoom', 'zoomchange');
 
-		var map = d3.select(self.id)
-		    .attr("class", "avl-map")
-		    .style("width", width + "px")
-		    .style("height", height + "px")
-		    .call(zoom);
+		this.zoomMap = function() {
+            dispatch.mapzoom.call(this);
 
-		var vectorLayer = map.append("g")
-		    .attr("class", "layer");
-
-		self.zoomMap = function() {
 			tileGen
 				.scale(zoom.scale())
 			    .translate(zoom.translate());
 
 			var tiles = tileGen();
+
+            if (tiles[0][2] != currentZoom) {
+                currentZoom = tiles[0][2];
+                dispatch.zoomchange.call(this, currentZoom);
+            }
 
 			projection
 			    .scale(zoom.scale() / 2 / Math.PI)
@@ -491,47 +484,68 @@
 
 			var vectorTiles = vectorLayer
 			    .style(prefix + "transform", matrix3d(tiles.scale, tiles.translate))
-			    .selectAll(".tile")
+			    .selectAll(".avl-tile")
 			    .data(tiles, function(d) { return d; });
 
 			vectorTiles.enter().append("svg")
-				.attr("class", "tile")
+				.attr("class", "avl-tile")
 
 			vectorTiles
 				.style("left", function(d) { return d[0] * 256 + "px"; })
 			    .style("top", function(d) { return d[1] * 256 + "px"; })
-			    .each(function(tile) {
-			    	var svg = d3.select(this),
-			    		tileID = 'tile-'+tile.join('-');
+                .each(function(tile) {
+                    var svg = d3.select(this);
 
-				    var k = 1 << (tile[2]+7),
-				    	translate = [k - tile[0] * 256, k - tile[1] * 256],
-				    	scale = k / Math.PI;
+                    if (RASTER_LAYER != null) {
+                        RASTER_LAYER.getImage(svg, tile);
+                    }
 
-			    	this.tileID = tileID;
+                    if (VECTOR_LAYERS.length) {
+                        var tileID = 'tile-'+tile.join('-'),
 
-			    	svg.selectAll('g')
-			    		.data(MAP_LAYERS)
-			    		.enter().append('g')
-			        	.attr('class', function(layer) { return layer.id; })
-			        	.each(function(layer) {
-			        		var xhr = layer.initTile(d3.select(this), tile, translate, scale);
-					        if (xhr) {
-					        	xhrCache.addXHR(xhr, tileID);
-					        }
+                            k = 1 << (tile[2]+7),
+                            translate = [k - tile[0] * 256, k - tile[1] * 256],
+                            scale = k / Math.PI;
 
-			        	}); // end svg.selectAll('g').each(...)
+                        this.tileID = tileID;
 
-			    }) // end vectorTiles.each(...)
+                        svg.selectAll('g')
+                            .data(VECTOR_LAYERS)
+                            .enter().append('g')
+                            .attr('class', function(layer) { return layer.id; })
+                            .each(function(layer) {
+                                var xhr = layer.initTile(d3.select(this), tile, translate, scale);
+                                xhrCache.addXHR(xhr, tileID);
+                            });
+                    } // end if (VECTOR_LAYERS)
 
-			vectorTiles.exit().each(function() { xhrCache.abortXHR(this.tileID); }).remove();
+                }) // end vectorTiles.each(...)
 
-			if (MAP_MARKERS) {
-				MAP_MARKERS();
-			}
+			vectorTiles.exit()
+                .each(function() { xhrCache.abortXHR(this.tileID); })
+                .remove();
 		}
 
-		self.layers = function(layer) {
+        var zoom = d3.behavior.zoom()
+            .scale(projection.scale() * 2 * Math.PI)
+            .scaleExtent(zoomExtent)
+            .translate(projection(startLoc).map(function(x) { return -x; }))
+            .on("zoom.avl-map", this.zoomMap);
+
+        var map = d3.select(this.id)
+            .append('div')
+            .classed("avl-map", true)
+            .style("width", width + "px")
+            .style("height", height + "px")
+            .call(zoom)
+            .on("dragstart.avl-map", function() {
+                d3.event.sourceEvent.stopPropagation(); // silence other listeners
+            });
+
+        var vectorLayer = map.append("g")
+            .attr("class", "avl-layer");
+
+		this.layers = function(layer, type) {
 			if (!arguments.length) {
 				return MAP_LAYERS;
 			}
@@ -541,26 +555,36 @@
 			if (!layer.name) {
 				layer.name = 'Layer '+LAYER_IDs;
 			}
+			
+            MAP_LAYERS.push(layer);
 
-			MAP_LAYERS.push(layer);
-
-			MAP_LAYERS.sort(function(a, b) { return a.zIndex - b.zIndex; });
+            if (type == 'raster') {
+                RASTER_LAYER = layer;
+            }
+            else {
+                VECTOR_LAYERS.push(layer);
+            }
 
 			if (controlsManager) {
 				controlsManager.update('layer');
 			}
 
-			self.zoomMap();
+			this.zoomMap();
 
-			return self;
+			return this;
 		}
-		self.removeLayer = function(layer) {
-			var index;
-			if ((index = MAP_LAYERS.indexOf(layer)) >= 0) {
+		this.removeLayer = function(layer) {
+			var index = MAP_LAYERS.indexOf(layer);
+			if (index >= 0) {
 				MAP_LAYERS.splice(index, 1);
 			}
-
-			MAP_LAYERS.sort(function(a, b) { return a.zIndex - b.zIndex; });
+            index = VECTOR_LAYERS.indexOf(layer);
+            if (index >= 0) {
+                VECTOR_LAYERS.splice(index, 1);
+            }
+            else {
+                RASTER_LAYER = null;
+            }
 
 			if (controlsManager) {
 				controlsManager.update('layer');
@@ -568,39 +592,62 @@
 
 			d3.selectAll('.'+layer.id).remove();
 
-			return self;
+			return this;
 		}
 
-		self.addControl = function(options) {
+		this.addControl = function(options) {
 			if (!controlsManager) {
-				controlsManager = new ControlsManager(self, map, projection, zoom);
+				controlsManager = new ControlsManager(this, map, projection, zoom);
 			}
-			controlsManager.addControl(options)
+            if (options.type == 'info') {
+                options.start = startLoc;
+            }
+			controlsManager.addControl(options);
 
-			return self;
+			return this;
 		}
 
-		self.MapMarker = function() {
+		this.MapMarker = function() {
 			if (!MAP_MARKERS) {
 				MAP_MARKERS = MapMarker(map, projection);
+                dispatch.on('mapzoom.mapmarkers', MAP_MARKERS);
 			}
 
 			return MAP_MARKERS;
 		}
 
-		self.dimensions = function(dims) {
+        this.on = function(type, func) {
+            dispatch.on(type, func);
+            return this;
+        }
+
+		this.dimensions = function(dims) {
 			return [width, height];
 		}
+        this.width = function(w) {
+            if (!arguments.length) {
+                return width;
+            }
+            width = w;
+            return this;
+        }
+        this.height = function(h) {
+            if (!arguments.length) {
+                return height;
+            }
+            height = h;
+            return this;
+        }
 	}
     AVLMap.prototype = Object.create(AVLMap.prototype);
     AVLMap.prototype.constructor = AVLMap;
 
 	AVLMap.prototype.addLayer = function(layer) {
 		if (layer instanceof VectorLayer) {
-			this.layers(layer);
+			this.layers(layer, 'vector');
 		}
 		else if (layer instanceof RasterLayer) {
-			this.layers(layer);
+			this.layers(layer, 'raster');
 		}
 		return this;
 	}
@@ -638,6 +685,15 @@
 	avlmap.RasterLayer = function(options) {
 		return new RasterLayer(options);
 	}
+
+    // ##########
+    // public functions
+    // ##########
+    avlmap.formatLocation = function(p, k) {
+        var format = d3.format("." + Math.floor(Math.log(k) / 2 - 2) + "f");
+        return (p[1] < 0 ? format(-p[1]) + "°S" : format(p[1]) + "°N") + "   "
+             + (p[0] < 0 ? format(-p[0]) + "°W" : format(p[0]) + "°E");
+    }
 
 	this.avlmap = avlmap;
 })()
