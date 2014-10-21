@@ -6,38 +6,41 @@ function test() {
 									  name: 'Raster Layer' }))
 		.addControl({type:'info', position: 'bottom-right'})
 		.addControl({type:'zoom'})
-		.addControl({type:'layer'})
+		.addControl({type:'layer'});
 
-	var buildings = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-buildings/{z}/{x}/{y}.json',
+	var buildings = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-buildings/{z}/{x}/{y}.topojson',
 									    name: 'Buildings' });
 	buildings.drawTile = drawBuildings;
+	buildings.converter = makeTopoJSON;
 	map.addLayer(buildings);
 
-	var highroads = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-highroad/{z}/{x}/{y}.json',
+	var highroads = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-highroad/{z}/{x}/{y}.topojson',
 									    name: 'Roads' });
 	highroads.drawTile = drawHighroads;
+	highroads.converter = makeTopoJSON;
 	map.addLayer(highroads);
 
 	var markers = map.MapMarker()
 		.data([
-			{ coords: [-74.47828, 42.68254], color: '#080', name: 'Cobbleskill' },
+			{ coords: [-74.47828, 42.68254], name: 'Cobbleskill' },
 			{ coords: [-73.82395, 42.68614], name: 'UAlbany' },
-			{ coords: [-73.68248, 42.73523], color: '#000', name: 'Troy' }
-		])();
+			{ coords: [-73.68248, 42.73523], name: 'Troy', image: 'banana_marker.png' }
+		]);
+	markers();
 
 	map.addControl({type:'marker'});
 
 	var strokeWidth = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
-		.range([5,3,5,1,1])
+		.range([5,3,5,1,1]);
 
 	var stroke = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
-		.range(["#392e40","#896f97","#614e6c","#525252","#525252"])
+		.range(["#392e40","#896f97","#614e6c","#525252","#525252"]);
 
 	var strokeDashArray = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
-		.range(['none', 'none', '2, 8', 'none', '5, 5'])
+		.range(['none', 'none', '2, 8', 'none', '5, 5']);
 
 	function drawBuildings(group, json, tilePath) {
       	group.selectAll("path")
@@ -62,5 +65,9 @@ function test() {
 				return stroke(d.properties.kind);
 			})
 			.attr("d", tilePath)
+	}
+
+	function makeTopoJSON(json) {
+		return topojson.feature(json, json.objects.vectile);
 	}
 }

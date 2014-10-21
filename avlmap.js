@@ -1,18 +1,21 @@
- (function() {
-	var avlmap = {version: '2.0-beta'};
+(function() {
+	var avlmap = { version: '2.0-beta' };
 
-    var UNIQUE_MARKER_IDs = 0;
+    var UNIQUE_MARKER_IDs = 0,
+        UNIQUE_LAYER_IDs = 0;
 
 	function AVLobject(options) {
-		this.id = arguments.length ? (options.id || null) : null;
+		this.id = options.id;
 	}
 
 	function MapLayer(options) {
+        options.id = options.id || 'layer-'+UNIQUE_LAYER_IDs++;
+
 		AVLobject.call(this, options);
 
 		this.URL = options.url;
-		this.name = options.name || null;
-        this._visible = true;
+		this.name = options.name || 'Layer '+UNIQUE_LAYER_IDs;
+        this.__visible__ = true;
 	}
     MapLayer.prototype = Object.create(AVLobject.prototype);
     MapLayer.prototype.constructor = MapLayer;
@@ -23,7 +26,7 @@
 
     MapLayer.prototype.visible = function(v) {
         if (!arguments.length) {
-            return this._visible;
+            return this.__visible__;
         }
         if (v) {
             this.showLayer();
@@ -36,20 +39,21 @@
 
     MapLayer.prototype.hideLayer = function() {
         d3.selectAll('.'+this.id).style('display', 'none');
-        this._visible = false;
+        this.__visible__ = false;
         return this;
     }
 
     MapLayer.prototype.showLayer = function() {
         d3.selectAll('.'+this.id).style('display', 'block');
-        this._visible = true;
-        return this;
+        this.__visible__ = true;
+        return this.__visible__;
     }
 
 	function VectorLayer(options) {
 		MapLayer.call(this, options);
 
 		this.zIndex = options.zIndex || 0;
+        this.converter = null;
 	}
     VectorLayer.prototype = Object.create(MapLayer.prototype);
     VectorLayer.prototype.constructor = VectorLayer;
@@ -57,18 +61,20 @@
     VectorLayer.prototype.tilePath = d3.geo.path().projection(d3.geo.mercator());
 
     VectorLayer.prototype.initTile = function(group, tile, translate, scale) {
-
-    	group.style('display', function(layer) {
-        		return layer.visible() ? 'block' : 'none';
-        	})
+        group.style('display', function(layer) {
+                return layer.visible() ? 'block' : 'none';
+            })
 
         return d3.json(this.makeURL(tile), callBack.bind(this));
 
         function callBack(error, json) {
+            if (this.converter) {
+                json = this.converter(json);
+            }
             this.tilePath.projection()
                 .translate(translate)
                 .scale(scale);
-            this.drawTile.bind(this)(group, json, this.tilePath);
+            this.drawTile(group, json, this.tilePath);
         }
     }
 
@@ -87,16 +93,25 @@
     RasterLayer.prototype = Object.create(MapLayer.prototype);
     RasterLayer.prototype.constructor = RasterLayer;
 
-    RasterLayer.prototype.getImage = function(svg, tile) {
-    	svg.selectAll('image').data([this])
-            .enter().append('svg:image')
-            .attr('class', function(layer) { return layer.id; })
-            .style('display', function(layer) {
+    RasterLayer.prototype.initTile = function(group, tile) {
+        group.style('display', function(layer) {
                 return layer.visible() ? 'block' : 'none';
             })
-    		.attr('width', '256px')
-    		.attr('height', '256px')
-    		.attr('xlink:href', function(layer) { return layer.makeURL(tile); });
+
+        return d3.xhr(this.makeURL(tile)).responseType('blob').get(callBack.bind(this));
+
+        function callBack(error, data) {
+            this.drawTile(group, window.URL.createObjectURL(data.response));
+        }
+    }
+
+    RasterLayer.prototype.drawTile = function(group, blobURI) {
+        group.selectAll('image').data([this])
+            .enter().append('svg:image')
+            .attr('class', function(layer) { return layer.id; })
+            .attr('width', '256px')
+            .attr('height', '256px')
+            .attr('xlink:href', blobURI);
     }
 
     function Control(map, options) {
@@ -146,8 +161,8 @@
 		Control.call(this, map, options);
 
 		var self = this,
-			width = mapObj.dimensions()[0],
-			height = mapObj.dimensions()[1];
+			width = mapObj.width(),
+			height = mapObj.height();
 
         self.DOMel.append('div')
             .attr('class', 'avl-button avl-bold')
@@ -240,9 +255,8 @@
     function MarkerControl(mapObj, projection, zoom, map, options) {
 		Control.call(this, map, options);
 
-		var width = mapObj.dimensions()[0],
-			height = mapObj.dimensions()[1],
-
+		var width = mapObj.width(),
+			height = mapObj.height(),
 			markers = mapObj.MapMarker();
 
 		this.update = function(data) {
@@ -258,7 +272,8 @@
 
             buttons.text(function(d) { return d.name; });
 		}
-        markers.updater(this.update.bind(this));
+        this.update(markers.data());
+        markers.on('dataupdate', this.update.bind(this));
 
         function zoomTo(d) {
             d3.event.stopPropagation();
@@ -342,7 +357,7 @@
     		width = 20,
     		height = 40,
     		markers = null,
-    		updater = null;
+            dispatcher = d3.dispatch("dataupdate");
 
     	function marker() {
     		markers = map.selectAll('.avl-map-marker')
@@ -358,13 +373,18 @@
     				d.name = d.name || 'avl-map-marker';
     				width = this.offsetWidth;
     				height = this.offsetHeight;
+                    d3.select(this).style('background-image', function(d) {
+                        if (d.image) {
+                            return 'url('+d.image+')';
+                        }
+                        return 'url(avl_map_default_marker.png)';
+                    })
     			});
 
     		markers.each(function(d) {
 				var loc = projection(d.coords);
 
 				d3.select(this)
-					.style('background-color', d.color || null)
 					.style('left', (loc[0]-width/2)+'px')
 					.style('top', (loc[1]-height)+'px')
 			})
@@ -372,12 +392,14 @@
         marker.each = function(func) {
             markers.each(func);
         }
-        marker.updater = function(u) {
+        marker.on = function(event, func) {
             if (!arguments.length) {
-                return updater;
+                return marker;
             }
-            updater = u;
-            updater(data);
+            if (arguments.length == 1) {
+                return dispatcher.on(event);
+            }
+            dispatcher.on(event, func);
             return marker;
         }
     	marker.data = function(d) {
@@ -385,12 +407,69 @@
     			return data;
     		}
     		data = d;
-            if (updater != null) {
-                updater(data);
-            }
+            dispatcher.dataupdate(data);
     		return marker;
     	}
     	return marker;
+    }
+
+    function BrushZoom(mapObj, map, width, height, zoom, maxZoom) {
+        window.addEventListener('keydown', keydown, true);
+        window.addEventListener('keyup', keyup, true);
+        
+        var brush = d3.svg.brush()
+            .x(d3.scale.identity().domain([0, width]))
+            .y(d3.scale.identity().domain([0, height]))
+            .on("brushend", brushend);
+
+        function keydown(key) {
+            if (key.keyCode == 16) {
+                brush.clear()
+                map.append('svg')
+                    .attr('id', 'avl-map-svg-overlay')
+                    .attr('class', 'avl-map-zoom-brush')
+                    .style("width", width + "px")
+                    .style("height", height + "px")
+                    .call(brush);
+                map.on('.zoom', null);
+            }
+        }
+        function keyup(key) {
+            if (key.keyCode == 16) {
+                d3.select('#avl-map-svg-overlay').remove();
+                map.call(zoom);
+            }
+        }
+
+        function brushend() {
+            if (brush.empty()) return;
+
+            zoomToBounds(brush.extent())
+            mapObj.zoomMap()
+
+            brush.clear();
+            d3.select('#avl-map-svg-overlay').call(brush);
+        }
+
+        function zoomToBounds(bounds) {
+            var wdth = bounds[1][0] - bounds[0][0],
+                hght = bounds[1][1] - bounds[0][1],
+
+                k = Math.min(width/wdth, height/hght),
+                desiredScale = zoom.scale()*k;
+
+            if (desiredScale > maxZoom) {
+                desiredScale = maxZoom;
+                k = maxZoom / zoom.scale();
+            }
+
+            var centroid = [(bounds[1][0]+bounds[0][0])/2, (bounds[1][1]+bounds[0][1])/2]//,
+                translate = zoom.translate();
+
+            zoom.scale(desiredScale)
+                .translate([translate[0]*k - centroid[0]*k + width / 2,
+                            translate[1]*k - centroid[1]*k + height / 2]);
+        }
     }
 
     function XHRcache() {
@@ -404,8 +483,6 @@
     	}
 
     	this.abortXHR = function(tileID) {
-            if (!cache.has(tileID)) return;
-
             var XHRlist = cache.get(tileID);
 
 			while (XHRlist.length) {
@@ -415,12 +492,11 @@
     }
 
 	function AVLMap(options) {
-		if (!options) {
-			options = {id: '#avl-map'};
-		}
-		else if (!options.id) {
+		if (!('id' in options)) {
 			options.id = '#avl-map';
+            d3.select('body').append('div').attr('id', options.id.slice(1));
 		}
+
 		AVLobject.call(this, options);
 
 		if (!document.getElementById(this.id.slice(1))) {
@@ -430,11 +506,9 @@
 				.attr('height', function() { return (window.innerHeight-this.offsetTop)+'px'; });
 		}
 
-        var zoomAdjust = 8; // needed to adjust start zoom
-
-        var minZoom = 1 << ((options.minZoom || 4) + zoomAdjust),
-            maxZoom = 1 << (Math.min((options.maxZoom || 17), 17) + zoomAdjust),
-            startZoom = options.startZoom ? 1 << (options.startZoom + zoomAdjust) : minZoom,
+        var minZoom = 1 << ((options.minZoom || 4) + 8),
+            maxZoom = 1 << (Math.min((options.maxZoom || 17), 17) + 8),
+            startZoom = options.startZoom ? 1 << (options.startZoom + 8) : minZoom,
             startLoc = options.startLoc || [-73.824, 42.686], // defaults to Albany, NY
             zoomExtent = [minZoom, maxZoom];
 
@@ -442,10 +516,7 @@
 		    height = window.innerHeight,
 		    prefix = prefixMatch();
 
-		var MAP_LAYERS = [],
-            VECTOR_LAYERS = [],
-            RASTER_LAYER = null,
-			LAYER_IDs = 0;
+		var MAP_LAYERS = [];
 
 		var MAP_MARKERS = null;
 
@@ -462,11 +533,12 @@
 		    .scale(startZoom / 2 / Math.PI)
 		    .translate([-width / 2, -height / 2]);
 
-        var dispatch = d3.dispatch('mapzoom', 'zoomchange');
+        var dispatcher = d3.dispatch('mapzoom', 'zoomchange');
+
+        dispatcher.mapzoom.bind(this);
+        dispatcher.zoomchange.bind(this);
 
 		this.zoomMap = function() {
-            dispatch.mapzoom.call(this);
-
 			tileGen
 				.scale(zoom.scale())
 			    .translate(zoom.translate());
@@ -475,12 +547,14 @@
 
             if (tiles[0][2] != currentZoom) {
                 currentZoom = tiles[0][2];
-                dispatch.zoomchange.call(this, currentZoom);
+                dispatcher.zoomchange(this, currentZoom);
             }
 
 			projection
 			    .scale(zoom.scale() / 2 / Math.PI)
 			    .translate(zoom.translate());
+
+            dispatcher.mapzoom(this);
 
 			var vectorTiles = vectorLayer
 			    .style(prefix + "transform", matrix3d(tiles.scale, tiles.translate))
@@ -488,7 +562,7 @@
 			    .data(tiles, function(d) { return d; });
 
 			vectorTiles.enter().append("svg")
-				.attr("class", "avl-tile")
+				.attr("class", "avl-tile");
 
 			vectorTiles
 				.style("left", function(d) { return d[0] * 256 + "px"; })
@@ -496,28 +570,22 @@
                 .each(function(tile) {
                     var svg = d3.select(this);
 
-                    if (RASTER_LAYER != null) {
-                        RASTER_LAYER.getImage(svg, tile);
-                    }
+                    var tileID = 'tile-'+tile.join('-'),
 
-                    if (VECTOR_LAYERS.length) {
-                        var tileID = 'tile-'+tile.join('-'),
+                        k = 1 << (tile[2]+7),
+                        translate = [k - tile[0] * 256, k - tile[1] * 256],
+                        scale = k / Math.PI;
 
-                            k = 1 << (tile[2]+7),
-                            translate = [k - tile[0] * 256, k - tile[1] * 256],
-                            scale = k / Math.PI;
+                    this.tileID = tileID;
 
-                        this.tileID = tileID;
-
-                        svg.selectAll('g')
-                            .data(VECTOR_LAYERS)
-                            .enter().append('g')
-                            .attr('class', function(layer) { return layer.id; })
-                            .each(function(layer) {
-                                var xhr = layer.initTile(d3.select(this), tile, translate, scale);
-                                xhrCache.addXHR(xhr, tileID);
-                            });
-                    } // end if (VECTOR_LAYERS)
+                    svg.selectAll('g')
+                        .data(MAP_LAYERS)
+                        .enter().append('g')
+                        .attr('class', function(layer) { return layer.id; })
+                        .each(function(layer) {
+                            var xhr = layer.initTile(d3.select(this), tile, translate, scale);
+                            xhrCache.addXHR(xhr, tileID);
+                        });
 
                 }) // end vectorTiles.each(...)
 
@@ -540,30 +608,19 @@
             .call(zoom)
             .on("dragstart.avl-map", function() {
                 d3.event.sourceEvent.stopPropagation(); // silence other listeners
-            });
+            })
+
+        BrushZoom(this, map, width, height, zoom, maxZoom);
 
         var vectorLayer = map.append("g")
             .attr("class", "avl-layer");
 
-		this.layers = function(layer, type) {
+		this.layers = function(layer) {
 			if (!arguments.length) {
 				return MAP_LAYERS;
 			}
-			if (!layer.id) {
-				layer.id = 'layer-'+LAYER_IDs++;
-			}
-			if (!layer.name) {
-				layer.name = 'Layer '+LAYER_IDs;
-			}
 			
             MAP_LAYERS.push(layer);
-
-            if (type == 'raster') {
-                RASTER_LAYER = layer;
-            }
-            else {
-                VECTOR_LAYERS.push(layer);
-            }
 
 			if (controlsManager) {
 				controlsManager.update('layer');
@@ -578,13 +635,6 @@
 			if (index >= 0) {
 				MAP_LAYERS.splice(index, 1);
 			}
-            index = VECTOR_LAYERS.indexOf(layer);
-            if (index >= 0) {
-                VECTOR_LAYERS.splice(index, 1);
-            }
-            else {
-                RASTER_LAYER = null;
-            }
 
 			if (controlsManager) {
 				controlsManager.update('layer');
@@ -610,20 +660,23 @@
 		this.MapMarker = function() {
 			if (!MAP_MARKERS) {
 				MAP_MARKERS = MapMarker(map, projection);
-                dispatch.on('mapzoom.mapmarkers', MAP_MARKERS);
+                dispatcher.on('mapzoom.mapmarkers', MAP_MARKERS);
 			}
 
 			return MAP_MARKERS;
 		}
 
-        this.on = function(type, func) {
-            dispatch.on(type, func);
+        this.on = function(event, func) {
+            if (!arguments.length) {
+                return this;
+            }
+            if (arguments.length == 1) {
+                return dispatcher.on(event);
+            }
+            dispatcher.on(event, func);
             return this;
         }
 
-		this.dimensions = function(dims) {
-			return [width, height];
-		}
         this.width = function(w) {
             if (!arguments.length) {
                 return width;
@@ -643,15 +696,12 @@
     AVLMap.prototype.constructor = AVLMap;
 
 	AVLMap.prototype.addLayer = function(layer) {
-		if (layer instanceof VectorLayer) {
-			this.layers(layer, 'vector');
-		}
-		else if (layer instanceof RasterLayer) {
-			this.layers(layer, 'raster');
-		}
-		return this;
+		return this.layers(layer);
 	}
 
+    // ################################ //
+    // private functions                //
+    // ################################ //
 	function matrix3d(scale, translate) {
 	  	var k = scale / 256, r = scale % 1 ? Number : Math.round;
 	  	return "matrix3d(" + [k, 0, 0, 0,
@@ -671,11 +721,11 @@
 	  	return "";
 	}
 
-	// ##########
-	// public constructor functions
-	// ##########
+	// ############################### //
+	// public constructor functions    //
+	// ############################### //
 	avlmap.Map = function(options) {
-		return new AVLMap(options);
+		return new AVLMap(options || {});
 	}
 
 	avlmap.VectorLayer = function(options) {
@@ -686,9 +736,9 @@
 		return new RasterLayer(options);
 	}
 
-    // ##########
-    // public functions
-    // ##########
+    // ################################ //
+    // public functions                 //
+    // ################################ //
     avlmap.formatLocation = function(p, k) {
         var format = d3.format("." + Math.floor(Math.log(k) / 2 - 2) + "f");
         return (p[1] < 0 ? format(-p[1]) + "°S" : format(p[1]) + "°N") + "   "
