@@ -20,6 +20,9 @@ function test() {
 	highroads.converter = makeTopoJSON;
 	map.addLayer(highroads);
 
+	// var test = avlmap.VectorLayer({url: 'http://localhost:1337/{z}/{x}/{y}'});
+	// map.addLayer(test);
+
 	var markers = map.MapMarker()
 		.data([
 			{ coords: [-74.47828, 42.68254], name: 'Cobbleskill' },

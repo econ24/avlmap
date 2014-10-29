@@ -549,7 +549,7 @@
                 currentZoom = tiles[0][2];
                 dispatcher.zoomchange(this, currentZoom);
             }
-
+            
 			projection
 			    .scale(zoom.scale() / 2 / Math.PI)
 			    .translate(zoom.translate());
