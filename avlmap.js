@@ -423,7 +423,7 @@
             .on("brushend", brushend);
 
         function keydown(key) {
-            if (key.keyCode == 16) {
+            if (key.keyCode == 17) {
                 brush.clear()
                 map.append('svg')
                     .attr('id', 'avl-map-svg-overlay')
@@ -435,7 +435,7 @@
             }
         }
         function keyup(key) {
-            if (key.keyCode == 16) {
+            if (key.keyCode == 17) {
                 d3.select('#avl-map-svg-overlay').remove();
                 map.call(zoom);
             }
@@ -494,7 +494,6 @@
 	function AVLMap(options) {
 		if (!('id' in options)) {
 			options.id = '#avl-map';
-            d3.select('body').append('div').attr('id', options.id.slice(1));
 		}
 
 		AVLobject.call(this, options);
@@ -677,6 +676,26 @@
             return this;
         }
 
+        this.zoomToBounds = function(bounds) {
+            var wdth = bounds[1][0] - bounds[0][0],
+                hght = bounds[1][1] - bounds[0][1],
+
+                k = Math.min(width/wdth, height/hght),
+                desiredScale = zoom.scale()*k;
+
+            if (desiredScale > maxZoom) {
+                desiredScale = maxZoom;
+                k = maxZoom / zoom.scale();
+            }
+
+            var centroid = [(bounds[1][0]+bounds[0][0])/2, (bounds[1][1]+bounds[0][1])/2]//,
+                translate = zoom.translate();
+
+            zoom.scale(desiredScale)
+                .translate([translate[0]*k - centroid[0]*k + width / 2,
+                            translate[1]*k - centroid[1]*k + height / 2]);
+        }
+
         this.width = function(w) {
             if (!arguments.length) {
                 return width;
@@ -689,6 +708,14 @@
                 return height;
             }
             height = h;
+            return this;
+        }
+
+        this.projection = function(p) {
+            if (!arguments.length) {
+                return projection;
+            }
+            projection = p;
             return this;
         }
 	}

@@ -20,14 +20,12 @@ function test() {
 	highroads.converter = makeTopoJSON;
 	map.addLayer(highroads);
 
-	// var test = avlmap.VectorLayer({url: 'http://localhost:1337/{z}/{x}/{y}'});
-	// map.addLayer(test);
-
 	var markers = map.MapMarker()
 		.data([
 			{ coords: [-74.47828, 42.68254], name: 'Cobbleskill' },
 			{ coords: [-73.82395, 42.68614], name: 'UAlbany' },
-			{ coords: [-73.68248, 42.73523], name: 'Troy', image: 'banana_marker.png' }
+			{ coords: [-73.68248, 42.73523], name: 'Troy', image: 'banana_marker.png' },
+			{ coords: [-76.4768, 42.6916], name: 'Locke', image: 'marker3.png' }
 		]);
 	markers();
 
@@ -35,7 +33,7 @@ function test() {
 
 	var strokeWidth = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
-		.range([5,3,5,1,1]);
+		.range([5,3,3,1,1]);
 
 	var stroke = d3.scale.ordinal()
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
