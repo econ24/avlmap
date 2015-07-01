@@ -19,12 +19,6 @@ body {
 	width: 256px;
 	height: 256px;
 }
-.avl-tile path {
-  fill: none;
-  stroke: #000;
-  stroke-linejoin: round;
-  stroke-linecap: square;
-}
 
 .avl-control {
 	 background-color: rgba(96, 78, 108, 0.5);

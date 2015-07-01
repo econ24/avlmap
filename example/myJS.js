@@ -3,21 +3,20 @@ window.onload = test;
 function test() {
 	var map = avlmap.Map()
 		.addLayer(avlmap.RasterLayer({url: "http://api.tiles.mapbox.com/v3/am3081.map-lkbhqenw/{z}/{x}/{y}.png",
-									  name: 'Raster Layer' }))
+									  name: 'Raster Layer', hidden: true }))
 		.addControl({type:'info', position: 'bottom-right'})
 		.addControl({type:'zoom'})
 		.addControl({type:'layer'});
 
 	var buildings = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-buildings/{z}/{x}/{y}.topojson',
-									    name: 'Buildings' });
-	buildings.drawTile = drawBuildings;
-	buildings.converter = makeTopoJSON;
+									    name: 'Buildings', attr: { stroke: '#97812a', fill: '#97812a' } });
+	buildings.converter = makeGeoJSON;
 	map.addLayer(buildings);
 
 	var highroads = avlmap.VectorLayer({url: 'http://tile.openstreetmap.us/vectiles-highroad/{z}/{x}/{y}.topojson',
 									    name: 'Roads' });
 	highroads.drawTile = drawHighroads;
-	highroads.converter = makeTopoJSON;
+	highroads.converter = makeGeoJSON;
 	map.addLayer(highroads);
 
 	var markers = map.MapMarker()
@@ -43,32 +42,25 @@ function test() {
 		.domain(['highway', 'major_road', 'rail', 'minor_road', 'path'])
 		.range(['none', 'none', '2, 8', 'none', '5, 5']);
 
-	function drawBuildings(group, json, tilePath) {
-      	group.selectAll("path")
-          	.data(json.features)
-			.enter().append("path")
-			.style('stroke', '#97812a')
-			.style('fill', '#97812a')
-			.attr("d", tilePath)
-	}
-
 	function drawHighroads(group, json, tilePath) {
       	group.selectAll("path")
           	.data(json.features.sort(function(a,b) { return a.properties.sort_key-b.properties.sort_key; }))
 			.enter().append("path")
-			.style('stroke-dasharray', function(d) {
-				return strokeDashArray(d.properties.kind);
+			.attr({
+				'stroke-dasharray': function(d) { return strokeDashArray(d.properties.kind); },
+				'stroke-width': function(d) { return strokeWidth(d.properties.kind); },
+				stroke: function(d) { return stroke(d.properties.kind); },
+				class: 'high-road',
+				'd': tilePath
 			})
-			.style('stroke-width', function(d) {
-				return strokeWidth(d.properties.kind);
-			})
-			.style('stroke', function(d) {
-				return stroke(d.properties.kind);
-			})
-			.attr("d", tilePath)
+			.on("click", function(d) { console.log(d); })
 	}
 
-	function makeTopoJSON(json) {
+	function makeGeoJSON(json) {
 		return topojson.feature(json, json.objects.vectile);
 	}
+
+	window.addEventListener("resize", function() {
+		map.size([window.innerWidth, window.innerHeight]);
+	})
 }

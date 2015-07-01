@@ -1,0 +1,8 @@
+.high-road {
+	fill: none;
+  	stroke-linejoin: round;
+  	stroke-linecap: square;
+}
+.high-road:hover {
+	stroke: #990;
+}
