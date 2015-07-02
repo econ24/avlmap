@@ -15,39 +15,23 @@
 
 		this.URL = options.url;
 		this.name = options.name || 'Layer '+UNIQUE_LAYER_IDs;
-        this.__visible__ = true;
         this.hidden = options.hidden || false;
+
+        var visible = true;
+        this.visible = function(v) {
+            if (!arguments.length) {
+                return visible;
+            }
+            visible = v;
+            d3.selectAll('.'+this.id).style('display', visible ? null : 'none');
+            return this;
+        }
 	}
     MapLayer.prototype = Object.create(AVLobject.prototype);
     MapLayer.prototype.constructor = MapLayer;
 
     MapLayer.prototype.makeURL = function(tile) {
         return this.URL.replace(/{z}\/{x}\/{y}/, tile[2] + '/' + tile[0] + '/' + tile[1]);
-    }
-
-    MapLayer.prototype.visible = function(v) {
-        if (!arguments.length) {
-            return this.__visible__;
-        }
-        if (v) {
-            this.showLayer();
-        }
-        else {
-            this.hideLayer()
-        }
-        return this;
-    }
-
-    MapLayer.prototype.hideLayer = function() {
-        d3.selectAll('.'+this.id).style('display', 'none');
-        this.__visible__ = false;
-        return this;
-    }
-
-    MapLayer.prototype.showLayer = function() {
-        d3.selectAll('.'+this.id).style('display', 'block');
-        this.__visible__ = true;
-        return this.__visible__;
     }
 
 /*
@@ -254,14 +238,10 @@ Base for map control objects.
         function toggle(layer) {
             d3.event.stopPropagation();
 
-            if (layer.visible()) {
-            	layer.hideLayer();
-            	d3.select(this).classed('avl-inactive', true);
-            }
-            else {
-            	layer.showLayer();
-            	d3.select(this).classed('avl-inactive', false);
-            }
+            var visible = layer.visible();
+
+        	layer.visible(!visible);
+        	d3.select(this).classed('avl-inactive', visible);
         }
     }
     LayerControl.prototype = Object.create(Control.prototype);
@@ -374,7 +354,7 @@ Base for map control objects.
     		markers = null,
             dispatcher = d3.dispatch("dataupdate");
 
-    	function marker() {
+    	function marker(tiles) {
     		markers = map.selectAll('.avl-map-marker')
     			.data(data, function(d) { return d.coords.join('-'); });
 
@@ -399,8 +379,13 @@ Base for map control objects.
     		markers.each(function(d) {
 				var loc = projection(d.coords);
 
+                // if (tiles) {
+                //     var mod = 1 << (tiles[0][2]+8);
+                //     loc[0] = (loc[0]%mod+mod)%mod;
+                // }
+
 				d3.select(this)
-                    .style("transform", "translate("+(loc[0]-width/2)+"px,"+(loc[1]-height)+"px)")
+                    .style("transform", "translate("+(loc[0]-width/2)+"px,"+(loc[1]-height)+"px)");
 			})
     	}
         marker.each = function(func) {
@@ -499,6 +484,74 @@ Base for map control objects.
     	}
     }
 
+var Tile = function() {
+  var size = [960, 500],
+      scale = 256,
+      translate = [size[0] / 2, size[1] / 2],
+      zoomDelta = 0,
+      clampX = clamp,
+      clampY = clamp;
+
+  function tile() {
+    var z = Math.max(Math.log(scale) / Math.LN2 - 8, 0),
+        z0 = Math.round(z + zoomDelta),
+        k = Math.pow(2, z - z0 + 8),
+        origin = [(translate[0] - scale / 2) / k, (translate[1] - scale / 2) / k],
+        tiles = [],
+        w = 1 << z0,
+        x0 = clampX(Math.floor(-origin[0]), w),
+        y0 = clampY(Math.floor(-origin[1]), w),
+        x1 = clampX(Math.ceil(size[0] / k - origin[0]), w),
+        y1 = clampY(Math.ceil(size[1] / k - origin[1]), w);
+
+    for (var y = y0; y < y1; ++y) {
+      for (var x = x0; x < x1; ++x) {
+        tiles.push([x, y, z0]);
+      }
+    }
+    tiles.translate = origin;
+    tiles.scale = k;
+
+    return tiles;
+  }
+
+  tile.size = function(_) {
+    if (!arguments.length) return size;
+    size = _;
+    return tile;
+  };
+
+  tile.scale = function(_) {
+    if (!arguments.length) return scale;
+    scale = _;
+    return tile;
+  };
+
+  tile.translate = function(_) {
+    if (!arguments.length) return translate;
+    translate = _;
+    return tile;
+  };
+
+  tile.zoomDelta = function(_) {
+    if (!arguments.length) return zoomDelta;
+    zoomDelta = +_;
+    return tile;
+  };
+
+  tile.overflow = function(_) {
+    if (!arguments.length) return [clampX === identity, clampY === identity];
+    clampX = _[0] ? identity : clamp;
+    clampY = _[1] ? identity : clamp;
+    return tile;
+  };
+
+  return tile;
+
+  function identity(x, max) { return x; }
+  function clamp(x, max) { return Math.max(0, Math.min(max, x)); }
+};
+
 	function AVLMap(options) {
 		if (!('id' in options)) {
 			options.id = '#avl-map';
@@ -535,8 +588,9 @@ Base for map control objects.
 
             controlsManager = null,
 
-            tileGen = d3.geo.tile()
-                .size([width, height]),
+            tileGen = Tile()
+                .size([width, height])
+                .overflow([true, false]),
 
             currentZoom,
 
@@ -560,11 +614,17 @@ Base for map control objects.
                 dispatcher.zoomchange(this, currentZoom);
             }
 
+            var mod = 1 << (tiles[0][2]+8),     // 1 << z = the number of tiles required to represent the width of the world.
+                                                // (1 << z) * 256 = number of pixels required to represent the world.
+                translate = zoom.translate();
+
+            zoom.translate([(translate[0]+mod)%mod, translate[1]])
+
 			projection
 			    .scale(zoom.scale() / 2 / Math.PI)
 			    .translate(zoom.translate());
 
-            dispatcher.mapzoom(this);
+            dispatcher.mapzoom(tiles);
 
 			vectorLayer.style(prefix + "transform", matrix3d(tiles.scale, tiles.translate))
 
@@ -575,14 +635,19 @@ Base for map control objects.
 			vectorTiles.enter()
                 .append("svg")
 				.attr("class", "avl-tile")
-				.style("left", function(d) { return d[0] * 256 + "px"; })
-			    .style("top", function(d) { return d[1] * 256 + "px"; })
+				.style("left", function(d) { return (d[0] << 8) + "px"; })
+			    .style("top", function(d) { return (d[1] << 8) + "px"; })
                 .each(function(tile, i) {
-                    var tileID = 'tile-'+tile.join('-'),
-
-                        k = 1 << (tile[2]+7),
+                    var k = 1 << (tile[2]+7),
                         translate = [k - tile[0] * 256, k - tile[1] * 256],
-                        scale = k / Math.PI;
+                        scale = k / Math.PI,
+
+                        z = tile[2],
+                        k0 = 1 << z,
+                        x = (tile[0] + k0) % k0,
+                        y = tile[1],
+
+                        tileID = 'tile-'+tile.join('-');
 
                     this.tileID = tileID;
 
@@ -591,7 +656,7 @@ Base for map control objects.
                         .enter().append('g')
                         .attr('class', function(layer) { return layer.id; })
                         .each(function(layer) {
-                            var xhr = layer.initTile(d3.select(this), tile, translate, scale);
+                            var xhr = layer.initTile(d3.select(this), [x, y, z], translate, scale);
                             xhrCache.addXHR(xhr, tileID);
                         });
                 }) // end vectorTiles.each(...)
@@ -599,11 +664,10 @@ Base for map control objects.
             vectorTiles.exit()
                 .each(function() { xhrCache.abortXHR(this.tileID); })
                 .remove();
-
 		}
 
         var zoom = d3.behavior.zoom()
-            .scale(projection.scale() * 2 * Math.PI)
+            .scale(startZoom)
             .scaleExtent(zoomExtent)
             .translate(projection(startLoc).map(function(x) { return -x; }))
             .on("zoom.avl-map", this.zoomMap);
@@ -796,6 +860,7 @@ Base for map control objects.
     // ################################ //
     avlmap.formatLocation = function(p, k) {
         var format = d3.format("." + Math.floor(Math.log(k) / 2 - 2) + "f");
+
         return (p[1] < 0 ? format(-p[1]) + "°S" : format(p[1]) + "°N") + "   "
              + (p[0] < 0 ? format(-p[0]) + "°W" : format(p[0]) + "°E");
     }
